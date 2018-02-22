@@ -3,9 +3,17 @@ package dynect
 import (
 	"fmt"
 	"log"
+	"math"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
+)
+
+const (
+	DO_RETRY_BACKOFF_FACTOR_MILLIS = 250
+	DO_MAX_SLEEP_MILLIS            = 2000
+	DO_MAX_CUMULATIVE_WAIT_MILLIS  = 30000
 )
 
 // ConvenientClient A client with extra helper methods for common actions
@@ -34,22 +42,35 @@ func (c *ConvenientClient) PublishZone(zone string) error {
 func (c *ConvenientClient) GetRecordID(record *Record) error {
 	finalID := ""
 	url := fmt.Sprintf("AllRecord/%s/%s", record.Zone, record.FQDN)
-	var records AllRecordsResponse
-	err := c.Do("GET", url, nil, &records)
-	if err != nil {
-		return fmt.Errorf("Failed to find Dyn record id: %s", err)
-	}
-	for _, recordURL := range records.Data {
-		id := strings.TrimPrefix(recordURL, fmt.Sprintf("/REST/%sRecord/%s/%s/", record.Type, record.Zone, record.FQDN))
-		if !strings.Contains(id, "/") && id != "" {
-			finalID = id
-			log.Printf("[INFO] Found Dyn record ID: %s", id)
+	loopCount := 1
+	cumulativeWaitMillis := float64(0)
+	for {
+		var records AllRecordsResponse
+		err := c.Do("GET", url, nil, &records)
+		if err != nil {
+			return fmt.Errorf("Failed to find Dyn record id: %s", err)
 		}
+		log.Printf("Total number of record URLs associated with the FQDN [%s] is [%d]", record.FQDN, len(records.Data))
+		for _, recordURL := range records.Data {
+			log.Printf("Parsing record URL: %s", recordURL)
+			id := strings.TrimPrefix(recordURL, fmt.Sprintf("/REST/%sRecord/%s/%s/", record.Type, record.Zone, record.FQDN))
+			if !strings.Contains(id, "/") && id != "" {
+				finalID = id
+				log.Printf("[INFO] Found Dyn record ID: %s", id)
+			}
+		}
+		if finalID != "" || cumulativeWaitMillis >= DO_MAX_CUMULATIVE_WAIT_MILLIS {
+			break
+		}
+		sleepTime := math.Min(float64(loopCount*DO_RETRY_BACKOFF_FACTOR_MILLIS), DO_MAX_SLEEP_MILLIS)
+		log.Printf("Sleeping between Dyn record retrieval: [%d] milliseconds", sleepTime)
+		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
+		loopCount++
+		cumulativeWaitMillis += sleepTime
 	}
 	if finalID == "" {
 		return fmt.Errorf("Failed to find Dyn record id!")
 	}
-
 	record.ID = finalID
 	return nil
 }
