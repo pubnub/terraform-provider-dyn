@@ -11,9 +11,9 @@ import (
 )
 
 const (
-	DO_RETRY_BACKOFF_FACTOR_MILLIS = 250
-	DO_MAX_SLEEP_MILLIS            = 2000
-	DO_MAX_CUMULATIVE_WAIT_MILLIS  = 30000
+	DO_RETRY_SLEEP_BACKOFF_FACTOR_MILLIS = 250
+	DO_RETRY_MAX_SLEEP_MILLIS            = 2000
+	DO_RETRY_MAX_CUMULATIVE_SLEEP_MILLIS = 30000
 )
 
 // ConvenientClient A client with extra helper methods for common actions
@@ -59,10 +59,10 @@ func (c *ConvenientClient) GetRecordID(record *Record) error {
 				log.Printf("[INFO] Found Dyn record ID: %s", id)
 			}
 		}
-		if finalID != "" || cumulativeWaitMillis >= DO_MAX_CUMULATIVE_WAIT_MILLIS {
+		if finalID != "" || cumulativeWaitMillis >= DO_RETRY_MAX_CUMULATIVE_SLEEP_MILLIS {
 			break
 		}
-		sleepTime := math.Min(float64(loopCount*DO_RETRY_BACKOFF_FACTOR_MILLIS), DO_MAX_SLEEP_MILLIS)
+		sleepTime := math.Min(float64(loopCount*DO_RETRY_SLEEP_BACKOFF_FACTOR_MILLIS), DO_RETRY_MAX_SLEEP_MILLIS)
 		log.Printf("Sleeping between Dyn record retrieval: [%d] milliseconds", sleepTime)
 		time.Sleep(time.Duration(sleepTime) * time.Millisecond)
 		loopCount++
